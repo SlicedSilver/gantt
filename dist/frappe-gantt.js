@@ -1112,7 +1112,8 @@ class Gantt {
             language: 'en',
             date_padding_start: 1,
             date_padding_end: 2,
-            skip_bar_events: false
+            skip_bar_events: false,
+            weekend_days: []
         };
         this.options = Object.assign({}, default_options, options);
     }
@@ -1439,30 +1440,82 @@ class Gantt {
         }
     }
 
+    compute_date_x(xdate) {
+        const { step, column_width } = this.options;
+        const task_start = xdate;
+        const gantt_start = this.gantt_start;
+
+        const diff = date_utils.diff(task_start, gantt_start, 'hour');
+        let x = diff / step * column_width;
+
+        if (this.view_is('Month')) {
+            const diff = date_utils.diff(task_start, gantt_start, 'day');
+            x = diff * column_width / 30;
+        }
+        return x;
+    }
+
     make_grid_highlights() {
-        // highlight today's date
-        if (this.view_is(VIEW_MODE.DAY)) {
-            const x =
-                date_utils.diff(date_utils.today(), this.gantt_start, 'hour') /
-                this.options.step *
-                this.options.column_width;
-            const y = 0;
-
-            const width = this.options.column_width;
-            const height =
-                (this.options.bar_height + this.options.padding) *
-                    this.tasks.length +
-                this.options.header_height +
-                this.options.padding / 2;
-
-            createSVG('rect', {
-                x,
-                y,
-                width,
-                height,
-                class: 'today-highlight',
-                append_to: this.layers.grid
-            });
+        const now = new Date();
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        const x = this.compute_date_x(start);
+        const x2 = this.compute_date_x(end);
+        const x3 = this.compute_date_x(now);
+        const width = x2 - x;
+        const y = 0;
+        const height =
+            (this.options.bar_height + this.options.padding) *
+                this.tasks.length +
+            this.options.header_height +
+            this.options.padding / 2;
+        createSVG('rect', {
+            x,
+            y,
+            width,
+            height,
+            class: 'today-highlight',
+            append_to: this.layers.grid
+        });
+        createSVG('rect', {
+            x: x3,
+            y,
+            width: 2,
+            height,
+            class: 'now-line',
+            append_to: this.layers.grid
+        });
+        if (
+            this.options.weekend_days &&
+            this.options.weekend_days.length === 7
+        ) {
+            const weekdays = this.options.weekend_days;
+            for (let date of this.dates) {
+                const day = date.getDay();
+                if (!weekdays[day]) {
+                    const start = new Date(date);
+                    start.setHours(0, 0, 0, 0);
+                    const end = new Date(date);
+                    end.setHours(23, 59, 59, 999);
+                    const x = this.compute_date_x(start);
+                    const x2 = this.compute_date_x(end);
+                    createSVG('rect', {
+                        x,
+                        y:
+                            this.options.header_height +
+                            this.options.padding / 2,
+                        width: x2 - x,
+                        height:
+                            height -
+                            this.options.header_height -
+                            this.options.padding / 2,
+                        class: 'weekend-highlight',
+                        append_to: this.layers.grid
+                    });
+                }
+            }
         }
     }
 
@@ -1511,12 +1564,12 @@ class Gantt {
         }
         const date_text = {
             'Quarter Day_lower': date_utils.format(
-                date,
+                date_utils.add(date, 12, 'hour'),
                 'HH',
                 this.options.language
             ),
             'Half Day_lower': date_utils.format(
-                date,
+                date_utils.add(date, 12, 'hour'),
                 'HH',
                 this.options.language
             ),
